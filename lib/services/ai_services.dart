@@ -1,26 +1,46 @@
 import 'dart:convert';
-
 import 'package:http/http.dart' as http;
 
 class AiService {
-  // static const String baseUrl = 'http://localhost:8080';
   final String baseUrl = 'http://192.168.0.199:8080';
 
   final String _systemPrompt = '''
-You are a helpful personal assistant that helps with tasks and organization.
+You are a helpful personal assistant. You ONLY respond in valid JSON. Never use markdown. Never add text outside the JSON object.
 
-when the users asks you to add a task, create or remember a task you must responds in this format:
-{"action": "add_task", "task": "[TASK TITLE HERE]", "message": "[YOU FRIENDLY CONFIRMATION HERE]", "description": "[OPTIONAL TASK DESCRIPTION HERE]"}
+Classify every user message into one of these actions:
 
-when the user asks you to list tasks, show tasks or what are my tasks you must responds in this format:
-{"action": "list_tasks"}
+1. If the user wants to add, create, remember, or schedule anything:
+{"action": "add_task", "task": "short task title", "message": "confirmation message"}
 
-for all other messages, respond in this exact json format:
-{"action": "chat", "message": "[YOUR RESPONSE HERE]"}
+2. If the user wants to see, list, or check their tasks:
+{"action": "list_tasks", "message": "sure, here are your tasks"}
 
-IMPORTANT: Always respond with valid JSON only. No extra text outside the JSON.
+3. Everything else:
+{"action": "chat", "message": "your response"}
 
+Examples:
+User: "remind me to buy milk" → {"action": "add_task", "task": "Buy milk", "message": "Added! I'll remind you to buy milk."}
+User: "I need to call John tomorrow" → {"action": "add_task", "task": "Call John", "message": "Got it, added a task to call John."}
+User: "what tasks do I have?" → {"action": "list_tasks", "message": "Here are your tasks"}
+User: "what's the weather like?" → {"action": "chat", "message": "I don't have access to weather data, but..."}
+
+CRITICAL: Output ONLY the JSON object. No markdown. No backticks. No extra words.
 ''';
+
+  String _cleanJson(String raw) {
+    String cleaned = raw
+        .replaceAll(RegExp(r'```json', caseSensitive: false), '')
+        .replaceAll('```', '')
+        .trim();
+
+    // Extract just the JSON object even if model adds surrounding text
+    final jsonMatch = RegExp(r'\{.*\}', dotAll: true).firstMatch(cleaned);
+    if (jsonMatch != null) {
+      return jsonMatch.group(0)!;
+    }
+    return cleaned;
+  }
+
   Future<Map<String, dynamic>> sendMessage(
     List<Map<String, String>> history,
   ) async {
@@ -39,26 +59,19 @@ IMPORTANT: Always respond with valid JSON only. No extra text outside the JSON.
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final content = data['choices'][0]['message']['content'] as String;
+        final raw = data['choices'][0]['message']['content'] as String;
+        final cleaned = _cleanJson(raw);
 
-        final refactoredContent = content
-            .replaceAll(RegExp(r'```'), ' ')
-            .replaceFirst(r'json', ' ')
-            .trim();
+        print('Raw: $raw');
+        print('Cleaned: $cleaned');
 
-        // Try to parse the AI's response as JSON
-        // If it fails, treat it as a plain chat message
         try {
-          print(content);
-          print(refactoredContent);
-          return jsonDecode(refactoredContent);
+          return jsonDecode(cleaned);
         } catch (_) {
-          return {
-            'action': 'chat',
-            'message': jsonDecode(refactoredContent)['message'],
-          };
+          return {'action': 'chat', 'message': cleaned};
         }
       }
+
       return {
         'action': 'chat',
         'message': '⚠️ Server error: ${response.statusCode}',
