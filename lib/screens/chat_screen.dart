@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:local_ai_chat/services/ai_services.dart';
 import '../models/message.dart';
 
-
 class ChatScreen extends StatefulWidget {
   // We pass a callback so chat can trigger task creation in the parent
   final Function(String taskTitle) onAddTask;
@@ -38,13 +37,19 @@ class _ChatScreenState extends State<ChatScreen> {
 
     final result = await _aiService.sendMessage(_history);
     final action = result['action'] as String;
-    final message = result['message'] as String;
+    final message = result['message'] as String? ?? '';
 
-    // If AI detected a task creation intent
     if (action == 'add_task') {
+      // Single task
       final taskTitle = result['task'] as String;
-      // Trigger the callback to add task in parent widget
       widget.onAddTask(taskTitle);
+    } else if (action == 'add_tasks') {
+      // Multiple tasks — iterate and add each one
+      final tasks = result['tasks'] as List<dynamic>;
+      print(tasks);
+      for (final task in tasks) {
+        widget.onAddTask(task as String);
+      }
     }
 
     setState(() {
@@ -82,17 +87,21 @@ class _ChatScreenState extends State<ChatScreen> {
               final msg = _messages[i];
               final isUser = msg.role == 'user';
               return Align(
-                alignment:
-                    isUser ? Alignment.centerRight : Alignment.centerLeft,
+                alignment: isUser
+                    ? Alignment.centerRight
+                    : Alignment.centerLeft,
                 child: Container(
                   margin: const EdgeInsets.symmetric(
-                      vertical: 4, horizontal: 12),
+                    vertical: 4,
+                    horizontal: 12,
+                  ),
                   padding: const EdgeInsets.symmetric(
-                      vertical: 10, horizontal: 14),
+                    vertical: 10,
+                    horizontal: 14,
+                  ),
                   constraints: const BoxConstraints(maxWidth: 300),
                   decoration: BoxDecoration(
-                    color:
-                        isUser ? Colors.deepPurple : Colors.grey.shade200,
+                    color: isUser ? Colors.deepPurple : Colors.grey.shade200,
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Text(
@@ -136,7 +145,9 @@ class _ChatScreenState extends State<ChatScreen> {
                       borderRadius: BorderRadius.circular(24),
                     ),
                     contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 10),
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
                   ),
                   onSubmitted: _sendMessage,
                 ),
