@@ -1,81 +1,98 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../models/task.dart';
 
 class AiService {
-  final String baseUrl = 'http://192.168.0.199:8080';
+  // final String baseUrl = 'http://192.168.0.199:8080';
+  final String baseUrl = 'http://0.0.0.0:8080';
 
-  final String _systemPrompt = '''
-You are a helpful personal assistant. You ONLY respond in valid JSON. Never use markdown. Never add text outside the JSON object.
+  String _buildSystemPrompt(List<Task> tasks) {
+    final taskContext = tasks.isEmpty
+        ? 'No tasks.'
+        : tasks
+              .asMap()
+              .entries
+              .map(
+                (e) =>
+                    '${e.key + 1}.[${e.value.id}] ${e.value.title}(${e.value.isCompleted ? "done" : "pending"})',
+              )
+              .join('\n');
 
-Classify every user message into one of these actions:
+    return '''
+You are a JSON-only assistant. Reply ONLY with one JSON object, no markdown.
 
-1. If the user wants to add, create, remember, or schedule ONE task:
-{"action": "add_task", "task": "short task title", "message": "confirmation message"}
+TASKS:
+$taskContext
 
-2. If the user wants to add, create, remember, or schedule MULTIPLE tasks:
-{"action": "add_tasks", "tasks": ["task 1", "task 2", "task 3"], "message": "confirmation message"}
+ACTIONS:
+- add_task: {"action":"add_task","task":"title","message":"reply"}
+- add_tasks: {"action":"add_tasks","tasks":["t1","t2"],"message":"reply"}
+- complete_task: {"action":"complete_task","task_id":"id","message":"reply"}
+- delete_task: {"action":"delete_task","task_id":"id","message":"reply"}
+- update_task: {"action":"update_task","task_id":"id","task":"title","message":"reply"}
+- list_tasks: {"action":"list_tasks","message":"reply"}
+- confirm_task: {"action":"confirm_task","proposed_task":"title","message":"question"}
+- task_declined: {"action":"task_declined","message":"reply"}
+- chat: {"action":"chat","message":"reply"}
 
-3. If the user wants to see, list, or check their tasks:
-{"action": "list_tasks", "message": "sure, here are your tasks"}
-
-4. Everything else:
-{"action": "chat", "message": "your response"}
-
-Examples:
-User: "remind me to buy milk" → {"action": "add_task", "task": "Buy milk", "message": "Added! I'll remind you to buy milk."}
-User: "I need to sew a hijab, fix my bag and call John" → {"action": "add_tasks", "tasks": ["Sew a hijab", "Fix bag", "Call John"], "message": "Got it! Added 3 tasks for you."}
-User: "what tasks do I have?" → {"action": "list_tasks", "message": "Here are your tasks"}
-User: "what is the capital of France?" → {"action": "chat", "message": "The capital of France is Paris."}
-
-CRITICAL: Output ONLY a single JSON object. No markdown. No backticks. No extra words. Never output multiple JSON objects.
+Add task only if explicitly requested or confirmed. Ask confirm_task if ambiguous.
 ''';
+  }
 
   String _cleanJson(String raw) {
-    String cleaned = raw
-        .replaceAll(RegExp(r'```json', caseSensitive: false), '')
-        .replaceAll('```', '')
-        .trim();
-
-    // Extract only the FIRST complete JSON object
-    // This handles cases where the model outputs multiple JSON objects
-    int depth = 0;
-    int start = -1;
-    for (int i = 0; i < cleaned.length; i++) {
-      if (cleaned[i] == '{') {
-        if (depth == 0) start = i; // mark start of first object
-        depth++;
-      } else if (cleaned[i] == '}') {
-        depth--;
-        if (depth == 0 && start != -1) {
-          return cleaned.substring(
-            start,
-            i + 1,
-          ); // return first complete object
-        }
-      }
-    }
-
-    return cleaned;
+    // With grammar enforcement, this is mostly just a safety trim
+    return raw.trim();
   }
+
+  // String _cleanJson(String raw) {
+  //   String cleaned = raw
+  //       .replaceAll(RegExp(r'```json', caseSensitive: false), '')
+  //       .replaceAll('```', '')
+  //       .trim();
+
+  //   int depth = 0;
+  //   int start = -1;
+  //   for (int i = 0; i < cleaned.length; i++) {
+  //     if (cleaned[i] == '{') {
+  //       if (depth == 0) start = i;
+  //       depth++;
+  //     } else if (cleaned[i] == '}') {
+  //       depth--;
+  //       if (depth == 0 && start != -1) {
+  //         return cleaned.substring(start, i + 1);
+  //       }
+  //     }
+  //   }
+  //   return cleaned;
+  // }
 
   Future<Map<String, dynamic>> sendMessage(
     List<Map<String, String>> history,
+    List<Task> currentTasks, // 👈 new parameter
   ) async {
     try {
       final response = await http.post(
+        // commented out if using ollama
         Uri.parse('$baseUrl/v1/chat/completions'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
+        // Uri.parse('$baseUrl/api/chat'),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8',
+        },
+        body: jsonEncode(<String, dynamic>{
           'messages': [
-            {'role': 'system', 'content': _systemPrompt},
+            {'role': 'system', 'content': _buildSystemPrompt(currentTasks)},
             ...history,
           ],
+
           'max_tokens': 1024,
         }),
       );
 
+      // print('API Response: ${response.statusCode} - ${response.body}');
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
+        // print('Decoded API response: $data');
         final raw = data['choices'][0]['message']['content'] as String;
         final cleaned = _cleanJson(raw);
 
@@ -89,11 +106,14 @@ CRITICAL: Output ONLY a single JSON object. No markdown. No backticks. No extra 
         }
       }
 
+      print('Error: ${response.statusCode} - ${response.body}');
+
       return {
         'action': 'chat',
         'message': '⚠️ Server error: ${response.statusCode}',
       };
     } catch (e) {
+      print('Response MainError: ${e.toString()}');
       return {
         'action': 'chat',
         'message': '⚠️ Could not reach server. Is llama-server running?',

@@ -68,25 +68,39 @@ class TaskService {
     await prefs.setString(_storageKey, encoded);
   }
 
-  Future<Task?> updateTask(String id, List<Task> currentTasks, Map<String, dynamic> updates) async {
+  // Future<Task?> updateTask(String id, List<Task> currentTasks, Map<String, dynamic> updates) async {
 
-    int index = currentTasks.indexWhere((task) => task.id == id);
+  //   int index = currentTasks.indexWhere((task) => task.id == id);
 
-    if (index == -1) {
-      throw Exception("Task with id '$id' not found");
-    }
+  //   if (index == -1) {
+  //     throw Exception("Task with id '$id' not found");
+  //   }
 
-    Task updatedTask = currentTasks[index].copyWith(
-      title: updates['title'] as String?,
-      description: updates['description'] as String?,
-      isCompleted: updates['is_completed'] as bool?
-    );
-    currentTasks[index] = updatedTask;
+  //   Task updatedTask = currentTasks[index].copyWith(
+  //     title: updates['title'] as String?,
+  //     description: updates['description'] as String?,
+  //     isCompleted: updates['is_completed'] as bool?
+  //   );
+  //   currentTasks[index] = updatedTask;
 
-    return updatedTask;
+  //   return updatedTask;
+  // }
+
+  // Add this method to your existing TaskService class
+  Future<List<Task>> updateTask(
+    List<Task> currentTasks,
+    String id,
+    String newTitle,
+  ) async {
+    final updated = currentTasks.map((t) {
+      if (t.id == id) t.title = newTitle;
+      return t;
+    }).toList();
+    await saveTasks(updated);
+    return updated;
   }
 
-  Future<List<Task>> toggleTask( List<Task> currentTasks, String id) async {
+  Future<List<Task>> toggleTask(List<Task> currentTasks, String id) async {
     // int index = currentTasks.indexWhere((task) => task.id == id);
 
     // if (index == -1) {
@@ -106,7 +120,6 @@ class TaskService {
     }).toList();
     await saveTasks(updated);
     return updated;
-
   }
 
   Future<List<Task>> deleteTask(List<Task> currentTasks, String id) async {

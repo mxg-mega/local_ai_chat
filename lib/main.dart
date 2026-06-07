@@ -4,7 +4,6 @@ import 'package:local_ai_chat/services/task_services.dart';
 import 'models/task.dart';
 import 'screens/chat_screen.dart';
 
-
 void main() {
   runApp(const MyApp());
 }
@@ -60,6 +59,11 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _tasks = updated);
   }
 
+  Future<void> _updateTask(String id, String newTitle) async {
+    final updated = await _taskService.updateTask(_tasks, id, newTitle);
+    setState(() => _tasks = updated);
+  }
+
   Future<void> _deleteTask(String id) async {
     final updated = await _taskService.deleteTask(_tasks, id);
     setState(() => _tasks = updated);
@@ -78,11 +82,18 @@ class _HomeScreenState extends State<HomeScreen> {
       body: IndexedStack(
         index: _currentIndex,
         children: [
-          ChatScreen(onAddTask: _addTask),
+          ChatScreen(
+            onAddTask: _addTask,
+            onToggleTask: _toggleTask,
+            onDeleteTask: _deleteTask,
+            onUpdateTask: _updateTask,
+            currentTasks: _tasks,
+          ),
           TasksScreen(
             tasks: _tasks,
             onToggle: _toggleTask,
             onDelete: _deleteTask,
+            // onUpdate: _updateTask,
             onAdd: _addTask,
           ),
         ],

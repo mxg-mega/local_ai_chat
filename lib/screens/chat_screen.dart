@@ -1,12 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:local_ai_chat/models/task.dart';
 import 'package:local_ai_chat/services/ai_services.dart';
 import '../models/message.dart';
 
 class ChatScreen extends StatefulWidget {
   // We pass a callback so chat can trigger task creation in the parent
   final Function(String taskTitle) onAddTask;
+  final Function(String id) onToggleTask;
+  final Function(String id) onDeleteTask;
+  final Function(String id, String newTitle) onUpdateTask;
+  final List<Task> currentTasks; // 👈 so we can pass to AI
 
-  const ChatScreen({super.key, required this.onAddTask});
+  const ChatScreen({
+    super.key,
+    required this.onAddTask,
+    required this.onToggleTask,
+    required this.onDeleteTask,
+    required this.onUpdateTask,
+    required this.currentTasks,
+  });
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -32,33 +44,81 @@ class _ChatScreenState extends State<ChatScreen> {
     _controller.clear();
     _scrollToBottom();
 
-    // Add to API history
     _history.add({'role': 'user', 'content': userText});
 
-    final result = await _aiService.sendMessage(_history);
+    // Pass current tasks so model knows what exists
+    final result = await _aiService.sendMessage(_history, widget.currentTasks);
     final action = result['action'] as String;
     final message = result['message'] as String? ?? '';
 
-    if (action == 'add_task') {
-      // Single task
-      final taskTitle = result['task'] as String;
-      widget.onAddTask(taskTitle);
-    } else if (action == 'add_tasks') {
-      // Multiple tasks — iterate and add each one
-      final tasks = result['tasks'] as List<dynamic>;
-      print(tasks);
-      for (final task in tasks) {
-        widget.onAddTask(task as String);
+    switch (action) {
+      case 'add_task':
+        widget.onAddTask(result['task'] as String);
+        break;
+
+      case 'add_tasks':
+        final tasks = result['tasks'] as List<dynamic>;
+        print(tasks);
+        for (final task in tasks) {
+          print(task);
+          widget.onAddTask(task as String);
+        }
+        break;
+
+      case 'complete_task':
+        widget.onToggleTask(result['task_id'] as String);
+        break;
+
+      case 'delete_task':
+        widget.onDeleteTask(result['task_id'] as String);
+        break;
+
+      case 'update_task':
+        widget.onUpdateTask(
+          result['task_id'] as String,
+          result['task'] as String,
+        );
+        break;
+
+      case 'confirm_task':
+        // Don't add anything yet — just show the confirmation question
+        // The proposed_task is stored in the message bubble context
+        // so when user says yes, the history already has it
+        break;
+
+      case 'task_declined':
+        // Nothing to do — just display the message
+        break;
+
+      case 'list_tasks':
+        // We handle display in the message bubble below
+        break;
+    }
+
+    // For list_tasks, build a readable message from current tasks
+    String displayMessage = message;
+    if (action == 'list_tasks') {
+      if (widget.currentTasks.isEmpty) {
+        displayMessage = 'You have no tasks yet! Want to add some?';
+      } else {
+        final taskLines = widget.currentTasks
+            .asMap()
+            .entries
+            .map(
+              (e) =>
+                  '${e.key + 1}. ${e.value.isCompleted ? "✅" : "⬜"} ${e.value.title}',
+            )
+            .join('\n');
+        displayMessage = 'Here are your tasks:\n\n$taskLines';
       }
     }
 
     setState(() {
-      _messages.add(Message(role: 'assistant', content: message));
+      _messages.add(Message(role: 'assistant', content: displayMessage));
       _isLoading = false;
     });
 
-    // Add assistant reply to history for context in next message
-    _history.add({'role': 'assistant', 'content': message});
+    _history.add({'role': 'assistant', 'content': displayMessage});
     _scrollToBottom();
   }
 

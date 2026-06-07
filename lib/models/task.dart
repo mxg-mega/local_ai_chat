@@ -5,6 +5,8 @@ class Task {
   bool isCompleted;
   final DateTime createdAt;
 
+  set title(String newTitle) => title = newTitle;
+
   Task({
     required this.id,
     required this.title,
